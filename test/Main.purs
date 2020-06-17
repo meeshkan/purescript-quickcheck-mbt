@@ -113,5 +113,14 @@ main ∷ Effect Unit
 main = launchAff_ $ runSpec [consoleReporter] do
   describe "checkStateMachine" do
     it "works" do
-      res ← liftEffect $ testModel 0 100 esetup eteardown initializer arbitrary arbitrary shrinker mock sut postcondition
+      res ← liftEffect $ testModel {
+        seed: 0,
+        nres: 100,
+        setup: esetup,
+        teardown: eteardown,
+        modelInitializer: initializer,
+        initialModelGenerator: arbitrary,
+        commandListGenerator: arbitrary,
+        commandShrinker: shrinker,
+        mock, sut, postcondition }
       100 `shouldEqual` (length $ filter (\r → r.success) res)

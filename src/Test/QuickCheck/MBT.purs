@@ -1,4 +1,4 @@
-module Test.QuickCheck.MBT (Env(..), testModel, Result(..)) where
+module Test.QuickCheck.MBT (Env(..), testModel, Result(..), TestModelOptions) where
 
 import Prelude
 
@@ -13,6 +13,10 @@ import Random.LCG (mkSeed)
 import Test.QuickCheck (class Testable, arbitrary, test)
 import Test.QuickCheck.Gen (Gen, evalGen)
 
+-- | A typeclass representing the result of an effectful computation done by the system under test.
+-- |
+-- | This is a wrapper arround `Effect`, so if you want to promote the result of an effectul computation
+-- | to env, just use `(Env res)`.
 newtype Env a = Env (Effect a)
 
 derive newtype instance functorEnv ∷ Functor Env
@@ -42,6 +46,11 @@ sutMap c (x : xs) = do
   rr ← sutMap c xs
   pure (r : rr)
 
+-- | A custom `Result` type replacing `Result` from QuickCheck.
+-- |
+-- | Often when doing model-based testing, it is useful to have rich information of both
+-- | success and failure outcomes. QuickCheck's result is pretty limited in its reporting
+-- | facilities and is best suited to simple unit tests.
 type Result model command result = {
   success :: Boolean, initialValue :: Int, model :: model, commands :: List command, mockResults :: List result, realResults :: List result }
 
@@ -91,27 +100,32 @@ shrink setup teardown initializer shrinker mock sut postcondition incoming = do
   res ← env2Effect $ sequence (map (\c → runStateMachineOnce setup teardown initializer mock sut postcondition incoming.initialValue incoming.model c) (shrinker incoming.commands))
   maybe (pure incoming) (shrink setup teardown initializer shrinker mock sut postcondition) (head (filter (\v → not v.success) res))
 
+type TestModelOptions model command result = {
+  seed ∷ Int,
+  nres ∷ Int,
+  setup ∷ (Int → Env Unit),
+  teardown ∷ (Int → Env Unit),
+  modelInitializer ∷ (model → Env Unit),
+  initialModelGenerator ∷ (Gen model),
+  commandListGenerator ∷ (Gen (List command)),
+  commandShrinker ∷ ((List command) → (List (List command))),
+  mock ∷ (model → command → (Tuple model result)),
+  sut ∷ (command → Env result),
+  postcondition ∷ (command → result → result → Boolean)
+}
+
+-- | Test a model
 testModel ∷
   ∀ model command result.
-  Int → -- seed
-  Int → -- n res
-  (Int → Env Unit) → -- setup
-  (Int → Env Unit) → -- teardown
-  (model → Env Unit) → -- initializer
-  (Gen model) → -- gen model
-  (Gen (List command)) → -- gen commands
-  ((List command) → (List (List command))) → -- shrinker
-  (model → command → (Tuple model result)) → -- mock
-  (command → Env result) → -- system under test
-  (command → result → result → Boolean) → -- postcondition
+  TestModelOptions model command result →
   Effect (List (Result model command result))
-testModel seed nres setup teardown initializer genModel genCommands shrinker mock sut postcondition = do
-  res ← env2Effect $ sequence (evalGen (replicateA nres g) { newSeed: (mkSeed seed), size: 10 })
-  sequence $ map (\r → if (r.success) then pure r else shrink setup teardown initializer shrinker mock sut postcondition r) res
+testModel opt = do
+  res ← env2Effect $ sequence (evalGen (replicateA opt.nres g) { newSeed: (mkSeed opt.seed), size: 10 })
+  sequence $ map (\r → if (r.success) then pure r else shrink opt.setup opt.teardown opt.modelInitializer opt.commandShrinker opt.mock opt.sut opt.postcondition r) res
   where
   g ∷ Gen (Env (Result model command result))
   g = do
     i ← arbitrary
-    model ← genModel
-    commands ← genCommands
-    pure $ (runStateMachineOnce setup teardown initializer mock sut postcondition i model commands)
+    model ← opt.initialModelGenerator
+    commands ← opt.commandListGenerator
+    pure $ (runStateMachineOnce opt.setup opt.teardown opt.modelInitializer opt.mock opt.sut opt.postcondition i model commands)
