@@ -10,18 +10,16 @@ import Data.Tuple (Tuple(..))
 import Effect (Effect)
 import Effect.Aff (launchAff_)
 import Effect.Class (liftEffect)
-import Effect.Console (log)
 import Queue (epush, epop, elng, esetup, eteardown, einit)
 import Test.QuickCheck (class Arbitrary, arbitrary)
-import Test.QuickCheck.Gen (Gen, oneOf)
-import Test.QuickCheck.MBT (Env, Result(..), checkStateMachine)
-import Test.Spec (pending, describe, it)
+import Test.QuickCheck.Gen (oneOf)
+import Test.QuickCheck.MBT (Env, testModel)
+import Test.Spec (describe, it)
 import Test.Spec.Assertions (shouldEqual)
 import Test.Spec.Reporter.Console (consoleReporter)
 import Test.Spec.Runner (runSpec)
 
 -- First, we create a model that represents the system under test
--- In Meeshkan-speak, this would be the model of our rest API
 newtype Model
   = Model (List Int)
 
@@ -31,8 +29,6 @@ newtype Model
 -- newtype strategy to create arbitrary models that contain integer lists
 -- of arbitrary sizes.
 derive newtype instance arbitraryModel ∷ Arbitrary Model
-
-derive newtype instance showModel ∷ Show Model
 
 -- This represents a command in stateful testing
 -- Here, because we are simulating a FIFO queue
@@ -54,19 +50,6 @@ data Outcome
 -- Because we will be comparing outcomes, we need some way to
 -- test for equality. In this case, we'll do a simple equality test.
 derive instance eqOutcome ∷ Eq Outcome
-
--- In order to print failures to the command line, we need a
--- string representation of commands. This is similar to the
--- Python __str__ method.
-instance showCommand ∷ Show Command where
-  show (Push i) = "Push " <> show i
-  show Pop = "Pop"
-  show GetLength = "GetLength"
-
-instance showOutcome ∷ Show Outcome where
-  show Pushed = "Pushed"
-  show (Popped i) = "Popped " <> show i
-  show (GotLength i) = "GotLength" <> show i
 
 -- This is our generator of commands
 -- In this case, we generate commands with an even probability
@@ -92,7 +75,7 @@ mock (Model m) Pop =
 
 mock mm@(Model m) GetLength = Tuple mm (GotLength $ length m)
 
--- The postconditino here is simple - we just verify that the mocked outcome
+-- The postcondition here is simple - we just verify that the mocked outcome
 -- is equal to the real outcome. This won't always work, ie if a server generates
 -- UUIDs. In that case, we'll need some other comparison, but for here, simple
 -- equality comparison works
@@ -130,5 +113,5 @@ main ∷ Effect Unit
 main = launchAff_ $ runSpec [consoleReporter] do
   describe "checkStateMachine" do
     it "works" do
-      res ← liftEffect $ checkStateMachine 0 100 esetup eteardown initializer arbitrary arbitrary shrinker mock sut postcondition
+      res ← liftEffect $ testModel 0 100 esetup eteardown initializer arbitrary arbitrary shrinker mock sut postcondition
       100 `shouldEqual` (length $ filter (\r → r.success) res)

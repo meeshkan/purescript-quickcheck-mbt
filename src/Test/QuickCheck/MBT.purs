@@ -1,4 +1,4 @@
-module Test.QuickCheck.MBT (Env(..), checkStateMachine, Result(..)) where
+module Test.QuickCheck.MBT (Env(..), testModel, Result(..)) where
 
 import Prelude
 
@@ -91,7 +91,7 @@ shrink setup teardown initializer shrinker mock sut postcondition incoming = do
   res ← env2Effect $ sequence (map (\c → runStateMachineOnce setup teardown initializer mock sut postcondition incoming.initialValue incoming.model c) (shrinker incoming.commands))
   maybe (pure incoming) (shrink setup teardown initializer shrinker mock sut postcondition) (head (filter (\v → not v.success) res))
 
-checkStateMachine ∷
+testModel ∷
   ∀ model command result.
   Int → -- seed
   Int → -- n res
@@ -105,7 +105,7 @@ checkStateMachine ∷
   (command → Env result) → -- system under test
   (command → result → result → Boolean) → -- postcondition
   Effect (List (Result model command result))
-checkStateMachine seed nres setup teardown initializer genModel genCommands shrinker mock sut postcondition = do
+testModel seed nres setup teardown initializer genModel genCommands shrinker mock sut postcondition = do
   res ← env2Effect $ sequence (evalGen (replicateA nres g) { newSeed: (mkSeed seed), size: 10 })
   sequence $ map (\r → if (r.success) then pure r else shrink setup teardown initializer shrinker mock sut postcondition r) res
   where
