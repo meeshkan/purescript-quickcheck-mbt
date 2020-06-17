@@ -100,12 +100,26 @@ shrink setup teardown initializer shrinker mock sut postcondition incoming = do
   res ← env2Effect $ sequence (map (\c → runStateMachineOnce setup teardown initializer mock sut postcondition incoming.initialValue incoming.model c) (shrinker incoming.commands))
   maybe (pure incoming) (shrink setup teardown initializer shrinker mock sut postcondition) (head (filter (\v → not v.success) res))
 
+-- | Options passed to `testModel`
+-- |
+-- | There are a lot, and it's pretty ugly. Sorry.
+-- | - seed ∷ seed used to seed the quickCheck generator
+-- | - nres ∷ the number of results to generate
+-- | - setup ∷ used to set up the SUT before testing
+-- | - teardown ∷ used to tear down the SUT after testing
+-- | - sutInitializer ∷ used to initialize the SUT before a test
+-- | - initialModelGenerator ∷ QuickCheck generator used to generate the initial model that kicks off the test and is consumed by the `sutInitializer`
+-- | - commandListGenerator ∷ generator for the list of commands going to the mock and SUT
+-- | - commandShrinker ∷ a shrinker a la QuickCheck of the command list
+-- | - mock ∷ a mock of the model
+-- | - sut ∷ the sut
+-- | - postcondition ∷ the postcondition to validate after each command is run, accepting the command, the mock result, and the real result
 type TestModelOptions model command result = {
   seed ∷ Int,
   nres ∷ Int,
   setup ∷ (Int → Env Unit),
   teardown ∷ (Int → Env Unit),
-  modelInitializer ∷ (model → Env Unit),
+  sutInitializer ∷ (model → Env Unit),
   initialModelGenerator ∷ (Gen model),
   commandListGenerator ∷ (Gen (List command)),
   commandShrinker ∷ ((List command) → (List (List command))),
@@ -121,11 +135,11 @@ testModel ∷
   Effect (List (Result model command result))
 testModel opt = do
   res ← env2Effect $ sequence (evalGen (replicateA opt.nres g) { newSeed: (mkSeed opt.seed), size: 10 })
-  sequence $ map (\r → if (r.success) then pure r else shrink opt.setup opt.teardown opt.modelInitializer opt.commandShrinker opt.mock opt.sut opt.postcondition r) res
+  sequence $ map (\r → if (r.success) then pure r else shrink opt.setup opt.teardown opt.sutInitializer opt.commandShrinker opt.mock opt.sut opt.postcondition r) res
   where
   g ∷ Gen (Env (Result model command result))
   g = do
     i ← arbitrary
     model ← opt.initialModelGenerator
     commands ← opt.commandListGenerator
-    pure $ (runStateMachineOnce opt.setup opt.teardown opt.modelInitializer opt.mock opt.sut opt.postcondition i model commands)
+    pure $ (runStateMachineOnce opt.setup opt.teardown opt.sutInitializer opt.mock opt.sut opt.postcondition i model commands)

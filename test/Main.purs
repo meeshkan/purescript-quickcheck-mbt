@@ -118,7 +118,7 @@ main = launchAff_ $ runSpec [consoleReporter] do
         nres: 100,
         setup: esetup,
         teardown: eteardown,
-        modelInitializer: initializer,
+        sutInitializer: initializer,
         initialModelGenerator: arbitrary,
         commandListGenerator: arbitrary,
         commandShrinker: shrinker,
