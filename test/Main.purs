@@ -111,7 +111,7 @@ shrinker c = mapWithIndex (\i _ → fromMaybe Nil (deleteAt i c)) c
 -- To run more than 100 tests, change the number 100 below
 main ∷ Effect Unit
 main = launchAff_ $ runSpec [consoleReporter] do
-  describe "checkStateMachine" do
+  describe "testModel" do
     it "works" do
       res ← liftEffect $ testModel {
         seed: 0,
