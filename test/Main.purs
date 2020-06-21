@@ -1,7 +1,6 @@
-module Main where
+module Test.Main where
 
 import Prelude
-
 import Data.Array (fromFoldable)
 import Data.List (List(..), (:), unsnoc, length, toUnfoldable, mapWithIndex, deleteAt, filter)
 import Data.Maybe (Maybe(..), fromMaybe, maybe)
@@ -60,7 +59,6 @@ instance arbitraryCommand ∷ Arbitrary Command where
     i ← arbitrary
     oneOf $ NonEmpty (pure $ Push i) [ pure Pop, pure GetLength ]
 
-
 -- This defines the behavior for the Push, Pop and GetLength commands
 mock ∷ Model → Command → (Tuple Model Outcome)
 mock (Model m) (Push i) = (Tuple (Model (i : m)) Pushed)
@@ -110,17 +108,24 @@ shrinker c = mapWithIndex (\i _ → fromMaybe Nil (deleteAt i c)) c
 -- It should show { failures: Nil, successes: 100, total: 100 }
 -- To run more than 100 tests, change the number 100 below
 main ∷ Effect Unit
-main = launchAff_ $ runSpec [consoleReporter] do
-  describe "testModel" do
-    it "works" do
-      res ← liftEffect $ testModel {
-        seed: 0,
-        nres: 100,
-        setup: esetup,
-        teardown: eteardown,
-        sutInitializer: initializer,
-        initialModelGenerator: arbitrary,
-        commandListGenerator: arbitrary,
-        commandShrinker: shrinker,
-        mock, sut, postcondition }
-      100 `shouldEqual` (length $ filter (\r → r.success) res)
+main =
+  launchAff_
+    $ runSpec [ consoleReporter ] do
+        describe "testModel" do
+          it "works" do
+            res ←
+              liftEffect
+                $ testModel
+                    { seed: 0
+                    , nres: 100
+                    , setup: esetup
+                    , teardown: eteardown
+                    , sutInitializer: initializer
+                    , initialModelGenerator: arbitrary
+                    , commandListGenerator: arbitrary
+                    , commandShrinker: shrinker
+                    , mock
+                    , sut
+                    , postcondition
+                    }
+            100 `shouldEqual` (length $ filter (\r → r.success) res)
