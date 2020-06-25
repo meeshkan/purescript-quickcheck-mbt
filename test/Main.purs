@@ -8,12 +8,11 @@ import Data.Maybe (Maybe(..), fromMaybe, maybe)
 import Data.NonEmpty (NonEmpty(..))
 import Data.Tuple (Tuple(..))
 import Effect (Effect)
-import Effect.Aff (launchAff_)
-import Effect.Class (liftEffect)
+import Effect.Aff (Aff, launchAff_)
 import Queue (epush, epop, elng, esetup, eteardown, einit)
 import Test.QuickCheck (class Arbitrary, arbitrary)
 import Test.QuickCheck.Gen (oneOf)
-import Test.QuickCheck.MBT (Env, Outcome(..), testModel)
+import Test.QuickCheck.MBT (Outcome(..), testModel)
 import Test.Spec (describe, it)
 import Test.Spec.Assertions (shouldEqual)
 import Test.Spec.Reporter.Console (consoleReporter)
@@ -84,7 +83,7 @@ postcondition _ r0 r1 = if r0 == r1 then (pure "passed") else (pure "failed")
 -- This initializes the system under test with a given model
 -- This is done ie if we want to start the DB in a given state
 -- Here, it will initialize the queue to a pre-existing queue of arbitrary length
-initializer ∷ Model → Env Unit
+initializer ∷ Model → Aff Unit
 initializer (Model l) = do
   let
     arr = toUnfoldable l ∷ Array Int
@@ -92,7 +91,7 @@ initializer (Model l) = do
 
 -- This is the system under test
 -- It uses the Queue.purs implementation, which uses Queue.py under the hood
-sut ∷ Command → Env Response
+sut ∷ Command → Aff Response
 sut (Push i) = do
   epush i
   pure Pushed
@@ -120,18 +119,17 @@ main =
         describe "testModel" do
           it "works" do
             res ←
-              liftEffect
-                $ testModel
-                    { seed: 0
-                    , nres: 100
-                    , setup: esetup
-                    , teardown: eteardown
-                    , sutInitializer: initializer
-                    , initialModelGenerator: arbitrary
-                    , commandListGenerator: arbitrary
-                    , commandShrinker: shrinker
-                    , mock
-                    , sut
-                    , postcondition
-                    }
+              testModel
+                { seed: 0
+                , nres: 100
+                , setup: esetup
+                , teardown: eteardown
+                , sutInitializer: initializer
+                , initialModelGenerator: arbitrary
+                , commandListGenerator: arbitrary
+                , commandShrinker: shrinker
+                , mock
+                , sut
+                , postcondition
+                }
             100 `shouldEqual` (length $ filter (\r → isSuccess r.outcome) res)

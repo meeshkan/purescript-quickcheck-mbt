@@ -1,6 +1,7 @@
-module Test.QuickCheck.MBT (Env(..), testModel, Result(..), TestModelOptions, Outcome(..)) where
+module Test.QuickCheck.MBT (testModel, Result(..), TestModelOptions, Outcome(..)) where
 
 import Prelude
+import Effect.Aff (Aff)
 import Data.Either (Either(..))
 import Data.Foldable (fold)
 import Data.List (zip, List(..), (:), filter, head)
@@ -8,31 +9,9 @@ import Data.Maybe (maybe)
 import Data.Traversable (sequence)
 import Data.Tuple (Tuple(..))
 import Data.Unfoldable (replicateA)
-import Effect (Effect)
-import Effect.Unsafe (unsafePerformEffect)
 import Random.LCG (mkSeed)
-import Test.QuickCheck (class Testable, arbitrary, test)
+import Test.QuickCheck (arbitrary)
 import Test.QuickCheck.Gen (Gen, evalGen)
-
--- | A typeclass representing the result of an effectful computation done by the system under test.
--- |
--- | This is a wrapper arround `Effect`, so if you want to promote the result of an effectul computation
--- | to env, just use `(Env res)`.
-newtype Env a
-  = Env (Effect a)
-
-derive newtype instance functorEnv ∷ Functor Env
-
-derive newtype instance applyEnv ∷ Apply Env
-
-derive newtype instance applicativeEnv ∷ Applicative Env
-
-derive newtype instance bindEnv ∷ Bind Env
-
-derive newtype instance monadEnv ∷ Monad Env
-
-instance testableEnv ∷ Testable prop ⇒ Testable (Env prop) where
-  test (Env prop) = test (unsafePerformEffect prop)
 
 newtype Outcome a b
   = Outcome (Either a b)
@@ -59,7 +38,7 @@ mockMap mock model Nil = Nil
 
 mockMap mock model (x : xs) = let (Tuple newModel res) = mock model x in res : (mockMap mock newModel xs)
 
-sutMap ∷ ∀ command result. (command → Env result) → List command → Env (List result)
+sutMap ∷ ∀ command result. (command → Aff result) → List command → Aff (List result)
 sutMap c Nil = pure Nil
 
 sutMap c (x : xs) = do
@@ -81,22 +60,19 @@ type Result model command result failure success
     , realResults :: List result
     }
 
-env2Effect ∷ ∀ a. Env a → Effect a
-env2Effect (Env a) = a
-
 runStateMachineOnce ∷
   ∀ model command result failure success.
   Monoid success =>
-  (Int → Env Unit) → -- setup
-  (Int → Env Unit) → -- teardown
-  (model → Env Unit) → -- initializer
+  (Int → Aff Unit) → -- setup
+  (Int → Aff Unit) → -- teardown
+  (model → Aff Unit) → -- initializer
   (model → command → (Tuple model result)) → -- mock
-  (command → Env result) → -- system under test
+  (command → Aff result) → -- system under test
   (command → result → result → Outcome failure success) → -- postcondition
   Int → -- initializer
   model → -- initial model
   List command → -- command list
-  Env (Result model command result failure success)
+  Aff (Result model command result failure success)
 runStateMachineOnce setup teardown initializer mock sut postcondition initialValue model commands = do
   setup initialValue
   initializer model
@@ -132,34 +108,33 @@ isFailure (Outcome (Right _)) = false
 shrink ∷
   ∀ model command result failure success.
   Monoid success =>
-  (Int → Env Unit) → -- setup
-  (Int → Env Unit) → -- teardown
-  (model → Env Unit) → -- initializer
+  (Int → Aff Unit) → -- setup
+  (Int → Aff Unit) → -- teardown
+  (model → Aff Unit) → -- initializer
   ((List command) → (List (List command))) → -- shrinker
   (model → command → (Tuple model result)) → -- mock
-  (command → Env result) → -- system under test
+  (command → Aff result) → -- system under test
   (command → result → result → Outcome failure success) → -- postcondition
   (Result model command result failure success) → -- inc
-  Effect (Result model command result failure success)
+  Aff (Result model command result failure success)
 shrink setup teardown initializer shrinker mock sut postcondition incoming = do
   res ←
-    env2Effect
-      $ sequence
-          ( map
-              ( \c →
-                  runStateMachineOnce
-                    setup
-                    teardown
-                    initializer
-                    mock
-                    sut
-                    postcondition
-                    incoming.initialValue
-                    incoming.model
-                    c
-              )
-              (shrinker incoming.commands)
+    sequence
+      ( map
+          ( \c →
+              runStateMachineOnce
+                setup
+                teardown
+                initializer
+                mock
+                sut
+                postcondition
+                incoming.initialValue
+                incoming.model
+                c
           )
+          (shrinker incoming.commands)
+      )
   maybe (pure incoming)
     ( shrink setup
         teardown
@@ -188,14 +163,14 @@ shrink setup teardown initializer shrinker mock sut postcondition incoming = do
 type TestModelOptions model command result failure success
   = { seed ∷ Int
     , nres ∷ Int
-    , setup ∷ (Int → Env Unit)
-    , teardown ∷ (Int → Env Unit)
-    , sutInitializer ∷ (model → Env Unit)
+    , setup ∷ (Int → Aff Unit)
+    , teardown ∷ (Int → Aff Unit)
+    , sutInitializer ∷ (model → Aff Unit)
     , initialModelGenerator ∷ (Gen model)
     , commandListGenerator ∷ (Gen (List command))
     , commandShrinker ∷ ((List command) → (List (List command)))
     , mock ∷ (model → command → (Tuple model result))
-    , sut ∷ (command → Env result)
+    , sut ∷ (command → Aff result)
     , postcondition ∷ (command → result → result → Outcome failure success)
     }
 
@@ -204,9 +179,9 @@ testModel ∷
   ∀ model command result failure success.
   Monoid success =>
   TestModelOptions model command result failure success →
-  Effect (List (Result model command result failure success))
+  Aff (List (Result model command result failure success))
 testModel opt = do
-  res ← env2Effect $ sequence (evalGen (replicateA opt.nres g) { newSeed: (mkSeed opt.seed), size: 10 })
+  res ← sequence (evalGen (replicateA opt.nres g) { newSeed: (mkSeed opt.seed), size: 10 })
   sequence
     $ map
         ( \r →
@@ -225,7 +200,7 @@ testModel opt = do
         )
         res
   where
-  g ∷ Gen (Env (Result model command result failure success))
+  g ∷ Gen (Aff (Result model command result failure success))
   g = do
     i ← arbitrary
     model ← opt.initialModelGenerator
