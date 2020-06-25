@@ -1,7 +1,6 @@
 module Queue (epush, epop, elng, esetup, eteardown, einit) where
 
 import Prelude
-
 import Data.Array as Array
 import Data.Maybe (Maybe(..))
 import Effect (Effect)
@@ -23,9 +22,10 @@ epush :: Int -> Env Unit
 epush = Env <<< push
 
 epop :: Env (Maybe Int)
-epop = Env do
-  l <- pop
-  pure (if (Array.length l == 0) then Nothing else (Array.(!!) l 0))
+epop =
+  Env do
+    l <- pop
+    pure (if (Array.length l == 0) then Nothing else (Array.(!!) l 0))
 
 elng :: Env Int
 elng = Env lng

@@ -1,7 +1,6 @@
 module Test.QuickCheck.MBT (Env(..), testModel, Result(..), TestModelOptions) where
 
 import Prelude
-
 import Data.List (zip, List(..), (:), foldl, filter, head)
 import Data.Maybe (maybe)
 import Data.Traversable (sequence)
@@ -17,12 +16,17 @@ import Test.QuickCheck.Gen (Gen, evalGen)
 -- |
 -- | This is a wrapper arround `Effect`, so if you want to promote the result of an effectul computation
 -- | to env, just use `(Env res)`.
-newtype Env a = Env (Effect a)
+newtype Env a
+  = Env (Effect a)
 
 derive newtype instance functorEnv ∷ Functor Env
+
 derive newtype instance applyEnv ∷ Apply Env
+
 derive newtype instance applicativeEnv ∷ Applicative Env
+
 derive newtype instance bindEnv ∷ Bind Env
+
 derive newtype instance monadEnv ∷ Monad Env
 
 instance testableEnv ∷ Testable prop ⇒ Testable (Env prop) where
@@ -51,8 +55,9 @@ sutMap c (x : xs) = do
 -- | Often when doing model-based testing, it is useful to have rich information of both
 -- | success and failure outcomes. QuickCheck's result is pretty limited in its reporting
 -- | facilities and is best suited to simple unit tests.
-type Result model command result = {
-  success :: Boolean, initialValue :: Int, model :: model, commands :: List command, mockResults :: List result, realResults :: List result }
+type Result model command result
+  = { success :: Boolean, initialValue :: Int, model :: model, commands :: List command, mockResults :: List result, realResults :: List result
+    }
 
 env2Effect ∷ ∀ a. Env a → Effect a
 env2Effect (Env a) = a
@@ -70,20 +75,19 @@ runStateMachineOnce ∷
   List command → -- command list
   Env (Result model command result)
 runStateMachineOnce setup teardown initializer mock sut postcondition initialValue model commands = do
-    setup initialValue
-    initializer model
-    realResults ← sutMap sut commands
-    let
-      mockResults = mockMap mock model commands
-    let
-      success =
-        foldl
-          (\a b → a && b)
-          true
-          $ map (\(Tuple rres (Tuple mres cmd)) → postcondition cmd mres rres) (zip realResults (zip mockResults commands))
-    teardown initialValue
-    pure $ {success, initialValue, model, commands, mockResults, realResults}
-
+  setup initialValue
+  initializer model
+  realResults ← sutMap sut commands
+  let
+    mockResults = mockMap mock model commands
+  let
+    success =
+      foldl
+        (\a b → a && b)
+        true
+        $ map (\(Tuple rres (Tuple mres cmd)) → postcondition cmd mres rres) (zip realResults (zip mockResults commands))
+  teardown initialValue
+  pure $ { success, initialValue, model, commands, mockResults, realResults }
 
 shrink ∷
   ∀ model command result.
@@ -114,19 +118,19 @@ shrink setup teardown initializer shrinker mock sut postcondition incoming = do
 -- | - mock ∷ a mock of the model
 -- | - sut ∷ the sut
 -- | - postcondition ∷ the postcondition to validate after each command is run, accepting the command, the mock result, and the real result
-type TestModelOptions model command result = {
-  seed ∷ Int,
-  nres ∷ Int,
-  setup ∷ (Int → Env Unit),
-  teardown ∷ (Int → Env Unit),
-  sutInitializer ∷ (model → Env Unit),
-  initialModelGenerator ∷ (Gen model),
-  commandListGenerator ∷ (Gen (List command)),
-  commandShrinker ∷ ((List command) → (List (List command))),
-  mock ∷ (model → command → (Tuple model result)),
-  sut ∷ (command → Env result),
-  postcondition ∷ (command → result → result → Boolean)
-}
+type TestModelOptions model command result
+  = { seed ∷ Int
+    , nres ∷ Int
+    , setup ∷ (Int → Env Unit)
+    , teardown ∷ (Int → Env Unit)
+    , sutInitializer ∷ (model → Env Unit)
+    , initialModelGenerator ∷ (Gen model)
+    , commandListGenerator ∷ (Gen (List command))
+    , commandShrinker ∷ ((List command) → (List (List command)))
+    , mock ∷ (model → command → (Tuple model result))
+    , sut ∷ (command → Env result)
+    , postcondition ∷ (command → result → result → Boolean)
+    }
 
 -- | Test a model
 testModel ∷
