@@ -68,10 +68,10 @@ postcondition ∷ Command → Response → Response → (Outcome String String)
 postcondition _ r0 r1 = if r0 == r1 then (pure "passed") else (pure "failed")
 ```
 
-This functino is used to initialize the system under test with a given model. This is used, for example, if you need to initialze a DB in the system under test. Note that the `Env` monad is just a `newtype` around `Effect`.
+This functino is used to initialize the system under test with a given model. This is used, for example, if you need to initialze a DB in the system under test.
 
 ```purescript
-initializer ∷ Model → Env Unit
+initializer ∷ Model → Aff Unit
 initializer (Model l) = do
   let
     arr = toUnfoldable l ∷ Array Int
@@ -81,7 +81,7 @@ initializer (Model l) = do
 This is the system under test. It uses a file called [./test/Queue.purs](./test/Queue.purs) that, under the hood, uses JavaScript via the FFI to represent a FIFO queue.
 
 ```purescript
-sut ∷ Command → Env Response
+sut ∷ Command → Aff Response
 sut (Push i) = do
   epush i
   pure Pushed
