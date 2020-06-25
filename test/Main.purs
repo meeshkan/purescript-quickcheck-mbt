@@ -2,6 +2,7 @@ module Test.Main where
 
 import Prelude
 import Data.Array (fromFoldable)
+import Data.Either (Either(..))
 import Data.List (List(..), (:), unsnoc, length, toUnfoldable, mapWithIndex, deleteAt, filter)
 import Data.Maybe (Maybe(..), fromMaybe, maybe)
 import Data.NonEmpty (NonEmpty(..))
@@ -12,7 +13,7 @@ import Effect.Class (liftEffect)
 import Queue (epush, epop, elng, esetup, eteardown, einit)
 import Test.QuickCheck (class Arbitrary, arbitrary)
 import Test.QuickCheck.Gen (oneOf)
-import Test.QuickCheck.MBT (Env, testModel)
+import Test.QuickCheck.MBT (Env, Outcome(..), testModel)
 import Test.Spec (describe, it)
 import Test.Spec.Assertions (shouldEqual)
 import Test.Spec.Reporter.Console (consoleReporter)
@@ -37,18 +38,18 @@ data Command
   | Pop
   | GetLength
 
--- This represents the outcome of a command
--- Note that while outcomes map 1-to-1 to commands, this is
+-- This represents the Response of a command
+-- Note that while Responses map 1-to-1 to commands, this is
 -- not necessary for the general algorithm to work.
 -- However, IMO, a 1-to-1 mapping makes things more readable.
-data Outcome
+data Response
   = Pushed
   | Popped (Maybe Int)
   | GotLength Int
 
--- Because we will be comparing outcomes, we need some way to
+-- Because we will be comparing Responses, we need some way to
 -- test for equality. In this case, we'll do a simple equality test.
-derive instance eqOutcome ∷ Eq Outcome
+derive instance eqResponse ∷ Eq Response
 
 -- This is our generator of commands
 -- In this case, we generate commands with an even probability
@@ -60,7 +61,7 @@ instance arbitraryCommand ∷ Arbitrary Command where
     oneOf $ NonEmpty (pure $ Push i) [ pure Pop, pure GetLength ]
 
 -- This defines the behavior for the Push, Pop and GetLength commands
-mock ∷ Model → Command → (Tuple Model Outcome)
+mock ∷ Model → Command → (Tuple Model Response)
 mock (Model m) (Push i) = (Tuple (Model (i : m)) Pushed)
 
 mock (Model m) Pop =
@@ -73,12 +74,12 @@ mock (Model m) Pop =
 
 mock mm@(Model m) GetLength = Tuple mm (GotLength $ length m)
 
--- The postcondition here is simple - we just verify that the mocked outcome
--- is equal to the real outcome. This won't always work, ie if a server generates
+-- The postcondition here is simple - we just verify that the mocked Response
+-- is equal to the real Response. This won't always work, ie if a server generates
 -- UUIDs. In that case, we'll need some other comparison, but for here, simple
 -- equality comparison works
-postcondition ∷ Command → Outcome → Outcome → Boolean
-postcondition _ r0 r1 = r0 == r1
+postcondition ∷ Command → Response → Response → (Outcome String String)
+postcondition _ r0 r1 = if r0 == r1 then (pure "passed") else (pure "failed")
 
 -- This initializes the system under test with a given model
 -- This is done ie if we want to start the DB in a given state
@@ -91,7 +92,7 @@ initializer (Model l) = do
 
 -- This is the system under test
 -- It uses the Queue.purs implementation, which uses Queue.py under the hood
-sut ∷ Command → Env Outcome
+sut ∷ Command → Env Response
 sut (Push i) = do
   epush i
   pure Pushed
@@ -103,6 +104,11 @@ sut GetLength = GotLength <$> elng
 -- we use a naive shrinker
 shrinker ∷ ∀ a. List a → List (List a)
 shrinker c = mapWithIndex (\i _ → fromMaybe Nil (deleteAt i c)) c
+
+isSuccess ∷ ∀ a b. Outcome a b → Boolean
+isSuccess (Outcome (Left _)) = false
+
+isSuccess (Outcome (Right _)) = true
 
 -- This is the main function that does the PBT and shows the results
 -- It should show { failures: Nil, successes: 100, total: 100 }
@@ -128,4 +134,4 @@ main =
                     , sut
                     , postcondition
                     }
-            100 `shouldEqual` (length $ filter (\r → r.success) res)
+            100 `shouldEqual` (length $ filter (\r → isSuccess r.outcome) res)

@@ -1,7 +1,9 @@
-module Test.QuickCheck.MBT (Env(..), testModel, Result(..), TestModelOptions) where
+module Test.QuickCheck.MBT (Env(..), testModel, Result(..), TestModelOptions, Outcome(..)) where
 
 import Prelude
-import Data.List (zip, List(..), (:), foldl, filter, head)
+import Data.Either (Either(..))
+import Data.Foldable (fold)
+import Data.List (zip, List(..), (:), filter, head)
 import Data.Maybe (maybe)
 import Data.Traversable (sequence)
 import Data.Tuple (Tuple(..))
@@ -32,6 +34,21 @@ derive newtype instance monadEnv ∷ Monad Env
 instance testableEnv ∷ Testable prop ⇒ Testable (Env prop) where
   test (Env prop) = test (unsafePerformEffect prop)
 
+newtype Outcome a b
+  = Outcome (Either a b)
+
+derive newtype instance functorOutcome ∷ Functor (Outcome a)
+
+derive newtype instance applyOutcome ∷ Apply (Outcome a)
+
+derive newtype instance applicativeOutcome ∷ Applicative (Outcome a)
+
+instance semigroupOutcome ∷ Semigroup b => Semigroup (Outcome a b) where
+  append (Outcome a) (Outcome b) = Outcome (a <> b)
+
+instance monoidOutcome ∷ Monoid b => Monoid (Outcome a b) where
+  mempty = Outcome (Right mempty)
+
 mockMap ∷
   ∀ model command result.
   (model → command → (Tuple model result)) → -- mock
@@ -55,8 +72,8 @@ sutMap c (x : xs) = do
 -- | Often when doing model-based testing, it is useful to have rich information of both
 -- | success and failure outcomes. QuickCheck's result is pretty limited in its reporting
 -- | facilities and is best suited to simple unit tests.
-type Result model command result
-  = { success :: Boolean
+type Result model command result failure success
+  = { outcome :: Outcome failure success
     , initialValue :: Int
     , model :: model
     , commands :: List command
@@ -68,17 +85,18 @@ env2Effect ∷ ∀ a. Env a → Effect a
 env2Effect (Env a) = a
 
 runStateMachineOnce ∷
-  ∀ model command result.
+  ∀ model command result failure success.
+  Monoid success =>
   (Int → Env Unit) → -- setup
   (Int → Env Unit) → -- teardown
   (model → Env Unit) → -- initializer
   (model → command → (Tuple model result)) → -- mock
   (command → Env result) → -- system under test
-  (command → result → result → Boolean) → -- postcondition
+  (command → result → result → Outcome failure success) → -- postcondition
   Int → -- initializer
   model → -- initial model
   List command → -- command list
-  Env (Result model command result)
+  Env (Result model command result failure success)
 runStateMachineOnce setup teardown initializer mock sut postcondition initialValue model commands = do
   setup initialValue
   initializer model
@@ -86,10 +104,8 @@ runStateMachineOnce setup teardown initializer mock sut postcondition initialVal
   let
     mockResults = mockMap mock model commands
   let
-    success =
-      foldl
-        (\a b → a && b)
-        true
+    outcome =
+      fold
         $ map
             ( \( Tuple
                   rres
@@ -100,7 +116,7 @@ runStateMachineOnce setup teardown initializer mock sut postcondition initialVal
             (zip realResults (zip mockResults commands))
   teardown initialValue
   pure
-    $ { success
+    $ { outcome
       , initialValue
       , model
       , commands
@@ -108,17 +124,23 @@ runStateMachineOnce setup teardown initializer mock sut postcondition initialVal
       , realResults
       }
 
+isFailure ∷ ∀ a b. Outcome a b → Boolean
+isFailure (Outcome (Left _)) = true
+
+isFailure (Outcome (Right _)) = false
+
 shrink ∷
-  ∀ model command result.
+  ∀ model command result failure success.
+  Monoid success =>
   (Int → Env Unit) → -- setup
   (Int → Env Unit) → -- teardown
   (model → Env Unit) → -- initializer
   ((List command) → (List (List command))) → -- shrinker
   (model → command → (Tuple model result)) → -- mock
   (command → Env result) → -- system under test
-  (command → result → result → Boolean) → -- postcondition
-  (Result model command result) → -- inc
-  Effect (Result model command result)
+  (command → result → result → Outcome failure success) → -- postcondition
+  (Result model command result failure success) → -- inc
+  Effect (Result model command result failure success)
 shrink setup teardown initializer shrinker mock sut postcondition incoming = do
   res ←
     env2Effect
@@ -147,7 +169,7 @@ shrink setup teardown initializer shrinker mock sut postcondition incoming = do
         sut
         postcondition
     )
-    (head (filter (\v → not v.success) res))
+    (head (filter (\v → isFailure v.outcome) res))
 
 -- | Options passed to `testModel`
 -- |
@@ -163,7 +185,7 @@ shrink setup teardown initializer shrinker mock sut postcondition incoming = do
 -- | - mock ∷ a mock of the model
 -- | - sut ∷ the sut
 -- | - postcondition ∷ the postcondition to validate after each command is run, accepting the command, the mock result, and the real result
-type TestModelOptions model command result
+type TestModelOptions model command result failure success
   = { seed ∷ Int
     , nres ∷ Int
     , setup ∷ (Int → Env Unit)
@@ -174,20 +196,21 @@ type TestModelOptions model command result
     , commandShrinker ∷ ((List command) → (List (List command)))
     , mock ∷ (model → command → (Tuple model result))
     , sut ∷ (command → Env result)
-    , postcondition ∷ (command → result → result → Boolean)
+    , postcondition ∷ (command → result → result → Outcome failure success)
     }
 
 -- | Test a model
 testModel ∷
-  ∀ model command result.
-  TestModelOptions model command result →
-  Effect (List (Result model command result))
+  ∀ model command result failure success.
+  Monoid success =>
+  TestModelOptions model command result failure success →
+  Effect (List (Result model command result failure success))
 testModel opt = do
   res ← env2Effect $ sequence (evalGen (replicateA opt.nres g) { newSeed: (mkSeed opt.seed), size: 10 })
   sequence
     $ map
         ( \r →
-            if (r.success) then
+            if (not (isFailure r.outcome)) then
               pure r
             else
               shrink
@@ -202,7 +225,7 @@ testModel opt = do
         )
         res
   where
-  g ∷ Gen (Env (Result model command result))
+  g ∷ Gen (Env (Result model command result failure success))
   g = do
     i ← arbitrary
     model ← opt.initialModelGenerator
