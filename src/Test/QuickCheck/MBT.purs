@@ -56,7 +56,12 @@ sutMap c (x : xs) = do
 -- | success and failure outcomes. QuickCheck's result is pretty limited in its reporting
 -- | facilities and is best suited to simple unit tests.
 type Result model command result
-  = { success :: Boolean, initialValue :: Int, model :: model, commands :: List command, mockResults :: List result, realResults :: List result
+  = { success :: Boolean
+    , initialValue :: Int
+    , model :: model
+    , commands :: List command
+    , mockResults :: List result
+    , realResults :: List result
     }
 
 env2Effect ∷ ∀ a. Env a → Effect a
@@ -85,9 +90,23 @@ runStateMachineOnce setup teardown initializer mock sut postcondition initialVal
       foldl
         (\a b → a && b)
         true
-        $ map (\(Tuple rres (Tuple mres cmd)) → postcondition cmd mres rres) (zip realResults (zip mockResults commands))
+        $ map
+            ( \( Tuple
+                  rres
+                  (Tuple mres cmd)
+              ) →
+                postcondition cmd mres rres
+            )
+            (zip realResults (zip mockResults commands))
   teardown initialValue
-  pure $ { success, initialValue, model, commands, mockResults, realResults }
+  pure
+    $ { success
+      , initialValue
+      , model
+      , commands
+      , mockResults
+      , realResults
+      }
 
 shrink ∷
   ∀ model command result.
@@ -101,8 +120,34 @@ shrink ∷
   (Result model command result) → -- inc
   Effect (Result model command result)
 shrink setup teardown initializer shrinker mock sut postcondition incoming = do
-  res ← env2Effect $ sequence (map (\c → runStateMachineOnce setup teardown initializer mock sut postcondition incoming.initialValue incoming.model c) (shrinker incoming.commands))
-  maybe (pure incoming) (shrink setup teardown initializer shrinker mock sut postcondition) (head (filter (\v → not v.success) res))
+  res ←
+    env2Effect
+      $ sequence
+          ( map
+              ( \c →
+                  runStateMachineOnce
+                    setup
+                    teardown
+                    initializer
+                    mock
+                    sut
+                    postcondition
+                    incoming.initialValue
+                    incoming.model
+                    c
+              )
+              (shrinker incoming.commands)
+          )
+  maybe (pure incoming)
+    ( shrink setup
+        teardown
+        initializer
+        shrinker
+        mock
+        sut
+        postcondition
+    )
+    (head (filter (\v → not v.success) res))
 
 -- | Options passed to `testModel`
 -- |
@@ -139,11 +184,38 @@ testModel ∷
   Effect (List (Result model command result))
 testModel opt = do
   res ← env2Effect $ sequence (evalGen (replicateA opt.nres g) { newSeed: (mkSeed opt.seed), size: 10 })
-  sequence $ map (\r → if (r.success) then pure r else shrink opt.setup opt.teardown opt.sutInitializer opt.commandShrinker opt.mock opt.sut opt.postcondition r) res
+  sequence
+    $ map
+        ( \r →
+            if (r.success) then
+              pure r
+            else
+              shrink
+                opt.setup
+                opt.teardown
+                opt.sutInitializer
+                opt.commandShrinker
+                opt.mock
+                opt.sut
+                opt.postcondition
+                r
+        )
+        res
   where
   g ∷ Gen (Env (Result model command result))
   g = do
     i ← arbitrary
     model ← opt.initialModelGenerator
     commands ← opt.commandListGenerator
-    pure $ (runStateMachineOnce opt.setup opt.teardown opt.sutInitializer opt.mock opt.sut opt.postcondition i model commands)
+    pure
+      $ ( runStateMachineOnce
+            opt.setup
+            opt.teardown
+            opt.sutInitializer
+            opt.mock
+            opt.sut
+            opt.postcondition
+            i
+            model
+            commands
+        )
