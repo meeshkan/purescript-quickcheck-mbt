@@ -123,17 +123,15 @@ shrink setup teardown initializer shrinker mock sut postcondition incoming = do
   res ←
     sequence
       ( map
-          ( \c →
-              runStateMachineOnce
-                setup
-                teardown
-                initializer
-                mock
-                sut
-                postcondition
-                incoming.initialValue
-                incoming.model
-                c
+          ( runStateMachineOnce
+              setup
+              teardown
+              initializer
+              mock
+              sut
+              postcondition
+              incoming.initialValue
+              incoming.model
           )
           (shrinker incoming.commands)
       )
