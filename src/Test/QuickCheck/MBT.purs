@@ -16,16 +16,18 @@ import Test.QuickCheck.Gen (Gen, evalGen)
 newtype Outcome a b
   = Outcome (Either a b)
 
+derive newtype instance showOutcome ∷ (Show a, Show b) ⇒ Show (Outcome a b)
+
 derive newtype instance functorOutcome ∷ Functor (Outcome a)
 
 derive newtype instance applyOutcome ∷ Apply (Outcome a)
 
 derive newtype instance applicativeOutcome ∷ Applicative (Outcome a)
 
-instance semigroupOutcome ∷ Semigroup b => Semigroup (Outcome a b) where
+instance semigroupOutcome ∷ Semigroup b ⇒ Semigroup (Outcome a b) where
   append (Outcome a) (Outcome b) = Outcome (a <> b)
 
-instance monoidOutcome ∷ Monoid b => Monoid (Outcome a b) where
+instance monoidOutcome ∷ Monoid b ⇒ Monoid (Outcome a b) where
   mempty = Outcome (Right mempty)
 
 mockMap ∷
@@ -62,7 +64,7 @@ type Result model command result failure success
 
 runStateMachineOnce ∷
   ∀ model command result failure success.
-  Monoid success =>
+  Monoid success ⇒
   (Int → Aff Unit) → -- setup
   (Int → Aff Unit) → -- teardown
   (model → Aff Unit) → -- initializer
@@ -107,7 +109,7 @@ isFailure (Outcome (Right _)) = false
 
 shrink ∷
   ∀ model command result failure success.
-  Monoid success =>
+  Monoid success ⇒
   (Int → Aff Unit) → -- setup
   (Int → Aff Unit) → -- teardown
   (model → Aff Unit) → -- initializer
@@ -177,7 +179,7 @@ type TestModelOptions model command result failure success
 -- | Test a model
 testModel ∷
   ∀ model command result failure success.
-  Monoid success =>
+  Monoid success ⇒
   TestModelOptions model command result failure success →
   Aff (List (Result model command result failure success))
 testModel opt = do
