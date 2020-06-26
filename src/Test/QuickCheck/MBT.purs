@@ -54,12 +54,12 @@ sutMap c (x : xs) = do
 -- | success and failure outcomes. QuickCheck's result is pretty limited in its reporting
 -- | facilities and is best suited to simple unit tests.
 type Result model command result failure success
-  = { outcome :: Outcome failure success
-    , initialValue :: Int
-    , model :: model
-    , commands :: List command
-    , mockResults :: List result
-    , realResults :: List result
+  = { outcome ∷ Outcome failure success
+    , initialValue ∷ Int
+    , model ∷ model
+    , commands ∷ List command
+    , mockResults ∷ List result
+    , realResults ∷ List result
     }
 
 runStateMachineOnce ∷
