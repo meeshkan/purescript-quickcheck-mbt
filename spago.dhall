@@ -5,7 +5,7 @@ You can edit this file as you like.
 { name = "quickcheck-mbt"
 , repository = "https://github.com/meeshkan/purescript-quickcheck-mbt"
 , license = "Apache-2.0"
-, dependencies = [ "aff", "console", "effect", "psci-support", "quickcheck" ]
+, dependencies = [ "quickcheck" ]
 , packages = ./packages.dhall
-, sources = [ "src/**/*.purs", "test/**/*.purs" ]
+, sources = [ "src/**/*.purs" ]
 }

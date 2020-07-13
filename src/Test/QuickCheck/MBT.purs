@@ -1,7 +1,6 @@
 module Test.QuickCheck.MBT (testModel, Result(..), TestModelOptions, Outcome(..)) where
 
 import Prelude
-import Effect.Aff (Aff)
 import Data.Either (Either(..))
 import Data.Foldable (fold)
 import Data.List (zip, List(..), (:), filter, head)
@@ -40,7 +39,7 @@ mockMap mock model Nil = Nil
 
 mockMap mock model (x : xs) = let (Tuple newModel res) = mock model x in res : (mockMap mock newModel xs)
 
-sutMap ∷ ∀ command result. (command → Aff result) → List command → Aff (List result)
+sutMap ∷ ∀ m command result. Monad m ⇒ (command → m result) → List command → m (List result)
 sutMap c Nil = pure Nil
 
 sutMap c (x : xs) = do
@@ -63,18 +62,19 @@ type Result model command result failure success
     }
 
 runStateMachineOnce ∷
-  ∀ model command result failure success.
+  ∀ m model command result failure success.
+  Monad m ⇒
   Monoid success ⇒
-  (Int → Aff Unit) → -- setup
-  (Int → Aff Unit) → -- teardown
-  (model → Aff Unit) → -- initializer
+  (Int → m Unit) → -- setup
+  (Int → m Unit) → -- teardown
+  (model → m Unit) → -- initializer
   (model → command → (Tuple model result)) → -- mock
-  (command → Aff result) → -- system under test
+  (command → m result) → -- system under test
   (command → result → result → Outcome failure success) → -- postcondition
   Int → -- initializer
   model → -- initial model
   List command → -- command list
-  Aff (Result model command result failure success)
+  m (Result model command result failure success)
 runStateMachineOnce setup teardown initializer mock sut postcondition initialValue model commands = do
   setup initialValue
   initializer model
@@ -108,17 +108,18 @@ isFailure (Outcome (Left _)) = true
 isFailure (Outcome (Right _)) = false
 
 shrink ∷
-  ∀ model command result failure success.
+  ∀ m model command result failure success.
+  Monad m ⇒
   Monoid success ⇒
-  (Int → Aff Unit) → -- setup
-  (Int → Aff Unit) → -- teardown
-  (model → Aff Unit) → -- initializer
+  (Int → m Unit) → -- setup
+  (Int → m Unit) → -- teardown
+  (model → m Unit) → -- initializer
   ((List command) → (List (List command))) → -- shrinker
   (model → command → (Tuple model result)) → -- mock
-  (command → Aff result) → -- system under test
+  (command → m result) → -- system under test
   (command → result → result → Outcome failure success) → -- postcondition
   (Result model command result failure success) → -- inc
-  Aff (Result model command result failure success)
+  m (Result model command result failure success)
 shrink setup teardown initializer shrinker mock sut postcondition incoming = do
   res ←
     sequence
@@ -160,26 +161,27 @@ shrink setup teardown initializer shrinker mock sut postcondition incoming = do
 -- | - mock ∷ a mock of the model
 -- | - sut ∷ the sut
 -- | - postcondition ∷ the postcondition to validate after each command is run, accepting the command, the mock result, and the real result
-type TestModelOptions model command result failure success
+type TestModelOptions m model command result failure success
   = { seed ∷ Int
     , nres ∷ Int
-    , setup ∷ (Int → Aff Unit)
-    , teardown ∷ (Int → Aff Unit)
-    , sutInitializer ∷ (model → Aff Unit)
+    , setup ∷ (Int → m Unit)
+    , teardown ∷ (Int → m Unit)
+    , sutInitializer ∷ (model → m Unit)
     , initialModelGenerator ∷ (Gen model)
     , commandListGenerator ∷ (Gen (List command))
     , commandShrinker ∷ ((List command) → (List (List command)))
     , mock ∷ (model → command → (Tuple model result))
-    , sut ∷ (command → Aff result)
+    , sut ∷ (command → m result)
     , postcondition ∷ (command → result → result → Outcome failure success)
     }
 
 -- | Test a model
 testModel ∷
-  ∀ model command result failure success.
+  ∀ m model command result failure success.
+  Monad m ⇒
   Monoid success ⇒
-  TestModelOptions model command result failure success →
-  Aff (List (Result model command result failure success))
+  TestModelOptions m model command result failure success →
+  m (List (Result model command result failure success))
 testModel opt = do
   res ← sequence (evalGen (replicateA opt.nres g) { newSeed: (mkSeed opt.seed), size: 10 })
   sequence
@@ -200,7 +202,7 @@ testModel opt = do
         )
         res
   where
-  g ∷ Gen (Aff (Result model command result failure success))
+  g ∷ Gen (m (Result model command result failure success))
   g = do
     i ← arbitrary
     model ← opt.initialModelGenerator
